@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+lab/user/
+lab/*.log
+lab/shots/
+work/
+dist/
+build/
+*.wbfs
+*.iso
+*.dol
+.DS_Store
+tools/prebuilt/*_feed.json
