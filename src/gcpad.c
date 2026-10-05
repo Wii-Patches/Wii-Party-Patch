@@ -33,12 +33,21 @@ struct ch {
     u8 ours;        /* the last KPAD sample on this channel was ours */
     u8 pad[6];
 };
+struct ptr {
+    float x, y;     /* the virtual pointer, KPAD units (x -1..1, y -0.75..0.75) */
+    u32 last_tb;    /* previous update */
+    u32 act_tb;     /* last stick movement or button press */
+    u32 on;         /* the pointer is shown */
+    u32 phase;      /* shake: which way the fake acceleration points */
+    u32 res[2];
+};
 struct st {
     u32 scheme, combo;
     u32 busy_tb;                /* when si:: was first seen busy (0 = idle) */
     u32 res;
     u32 feed[4][2];             /* DEBUG_FEED: pad responses written by a debugger */
     struct ch ch[4];
+    struct ptr ptr[4];          /* at +0x80 */
 };
 #define ST ((volatile struct st *)STATE)
 
@@ -182,6 +191,17 @@ static inline s16 stick(u32 raw)
     return (s16)v;
 }
 
+/* the Classic Controller's right stick is read with a coarser scale than its left one */
+static inline s16 cstick(u32 raw)
+{
+    s32 v = ((s32)(raw & 0xFF) - 128) * STICK_SCALE;
+    if (v > CSTICK_MAX)
+        v = CSTICK_MAX;
+    if (v < -CSTICK_MAX)
+        v = -CSTICK_MAX;
+    return (s16)v;
+}
+
 static __attribute__((noinline)) u32 cc_buttons(u32 h)
 {
     u32 b = 0;
@@ -196,11 +216,11 @@ static __attribute__((noinline)) u32 cc_buttons(u32 h)
     if (h & G_DOWN) b |= CL_DOWN;
     if (h & G_RIGHT) b |= CL_RIGHT;
     if (h & G_LEFT) b |= CL_LEFT;
-    if (h & G_Z) b |= CL_ZR;
+    if (h & G_Z) b |= CL_ZL | CL_ZR;         /* ZL + ZR together: shake */
     if (h & G_START) b |= CL_PLUS;
     /* Start + Z is Classic + and - together: swaps the horizontal and vertical layouts */
     if ((h & (G_START | G_Z)) == (G_START | G_Z))
-        b = (b & ~(CL_ZR | CL_PLUS)) | CL_PLUS | CL_MINUS;
+        b = (b & ~(CL_ZL | CL_ZR | CL_PLUS)) | CL_PLUS | CL_MINUS;
     /* HOME: L + R + Start */
     if ((h & (G_L | G_R | G_START)) == (G_L | G_R | G_START))
         b = (b & ~(CL_L | CL_R | CL_PLUS)) | CL_HOME;
@@ -212,8 +232,8 @@ static __attribute__((noinline)) void fill_cc(u8 *s, u32 h, u32 l, u32 b)
     *(u16 *)(s + 0x2A) = (u16)b;
     *(s16 *)(s + 0x2C) = stick(h >> 8);      /* control stick x */
     *(s16 *)(s + 0x2E) = stick(h);           /* control stick y */
-    *(s16 *)(s + 0x30) = stick(l >> 24);     /* C-stick x */
-    *(s16 *)(s + 0x32) = stick(l >> 16);     /* C-stick y */
+    *(s16 *)(s + 0x30) = cstick(l >> 24);    /* C-stick x */
+    *(s16 *)(s + 0x32) = cstick(l >> 16);    /* C-stick y */
     s[0x34] = (h & G_L) ? 180 : 0;           /* digital L / R: the game reads them only as buttons */
     s[0x35] = (h & G_R) ? 180 : 0;
     s[0x28] = 2;                             /* extension: Classic Controller */
@@ -318,5 +338,82 @@ u32 gc_probe(u32 chan, u32 *type)
     if (type)
         *type = 2;
     return 1;
+}
+#endif
+
+#if defined(HOOK_PTR1) || defined(HOOK_PTR2)
+/* The Classic Controller has no pointer and no motion, but Wii Party's games use both.  Called after KPAD has
+ * processed each sample (before it is copied into the caller's status entry): the right stick moves a virtual
+ * IR pointer, and ZL + ZR together (GameCube: Z) fake a shake.  Real Wii Remote data is never touched: only
+ * Classic Controller samples (device type 2) come here.  Hard float; no constants in memory.
+ * k = the channel's KPAD struct, entry = the sample being processed. */
+static inline float F(u32 u)
+{
+    union { u32 u; float f; } x;
+    __asm__("" : "+r"(u));          /* keeps the constant out of .rodata: the bodies are position independent */
+    x.u = u;
+    return x.f;
+}
+static inline u32 U(float f)
+{
+    union { u32 u; float f; } x;
+    x.f = f;
+    return x.u;
+}
+
+void cc_ptr(u8 *k, u32 chan, u8 *entry)
+{
+    volatile struct ptr *p;
+    float rx, ry, px, py, dt;
+    u32 now, dt_tb, moved, btn;
+
+    if (chan > 3 || k[0x5C] != 2)
+        return;
+    p = &ST->ptr[chan];
+    now = tb();
+    dt_tb = now - p->last_tb;
+    p->last_tb = now;
+    if (dt_tb > 4050000u)
+        dt_tb = 4050000u;                         /* first sample, or the game paused: 0.1 s at most */
+    dt = (F(0x4B000000u | dt_tb) - F(0x4B000000u)) * F(0x32D418DFu);   /* seconds */
+
+    btn = *(u16 *)(entry + 0x2A);                  /* the Classic buttons as the sample carries them */
+    rx = *(float *)(k + 0x74);
+    ry = *(float *)(k + 0x78);
+    moved = (U(rx) & 0x7FFFFFFFu) > 0x3E19999Au || (U(ry) & 0x7FFFFFFFu) > 0x3E19999Au;   /* > 0.15 */
+
+    if (moved || btn) {
+        if (!p->on && moved) {
+            p->x = F(0);
+            p->y = F(0);
+        }
+        p->act_tb = now;
+    }
+    if (moved) {
+        p->on = 1;
+        px = p->x + rx * dt * F(PTR_SPEED_X);
+        py = p->y - ry * dt * F(PTR_SPEED_Y);      /* KPAD y grows downwards */
+        if (px > F(0x3F800000u)) px = F(0x3F800000u);
+        if (px < F(0xBF800000u)) px = F(0xBF800000u);
+        if (py > F(0x3F400000u)) py = F(0x3F400000u);
+        if (py < F(0xBF400000u)) py = F(0xBF400000u);
+        p->x = px;
+        p->y = py;
+    }
+    if (p->on && now - p->act_tb > 607500000u)    /* 15 s idle: hand the pointer back to the menus */
+        p->on = 0;
+    if (p->on) {
+        *(float *)(k + 0x20) = p->x;
+        *(float *)(k + 0x24) = p->y;
+        k[0x5E] = 1;
+    }
+
+    if ((btn & 0x84) == 0x84) {                   /* ZL + ZR: shake */
+        float a = p->phase ? F(0x40800000u) : F(0xC0800000u);
+        p->phase ^= 1;
+        *(float *)(k + 0x0C) = a;
+        *(float *)(k + 0x10) = a;
+        *(float *)(k + 0x14) = a;
+    }
 }
 #endif

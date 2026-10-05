@@ -11,3 +11,5 @@ build/
 *.dol
 .DS_Store
 tools/prebuilt/*_feed.json
+/tools/dist/
+pyinst_dist/

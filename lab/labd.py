@@ -10,9 +10,12 @@
 """
 import json, socketserver, sys, time
 sys.path.insert(0, __file__.rsplit('/', 1)[0])
+sys.path.insert(0, __file__.rsplit('/', 1)[0] + '/../tools')
 from lab import *
 
 lab = None
+import threading
+LOCK = threading.Lock()
 
 
 class H(socketserver.StreamRequestHandler):
@@ -22,7 +25,8 @@ class H(socketserver.StreamRequestHandler):
             if not a:
                 continue
             try:
-                out = run(a)
+                with LOCK:
+                    out = run(a)
             except Exception as e:
                 out = 'ERR %s' % e
             self.wfile.write((json.dumps(out) if not isinstance(out, str) else out).encode() + b'\n')
@@ -50,8 +54,23 @@ def run(a):
         return lab.read(int(a[1], 16), int(a[2])).hex()
     if c == 'write':
         lab.write(int(a[1], 16), bytes.fromhex(a[2])); return 'ok'
+    if c == 'reload':
+        import patcher, struct as st
+        data = patcher.load('SUPE01', True)
+        blob, placed = patcher.layout(data, [s for f in patcher.ORDER for s in data['features'][f]])
+        sz = 0
+        lab._halt()
+        try:
+            for off in range(sz, len(blob), 512):
+                chunk = bytes(blob[off:min(off + 512, len(blob))])
+                lab.g.cmd('M%x,%x:%s' % (patcher.LOW + off, len(chunk), chunk.hex()))
+            for va, at in placed:
+                lab.g.cmd('M%x,4:%s' % (va, st.pack('>I', patcher.branch(va, at)).hex()))
+        finally:
+            lab._go()
+        return 'reloaded %d bytes' % (len(blob) - sz)
     if c == 'quit':
-        lab.stop(); sys.exit(0)
+        lab.stop(); __import__('os')._exit(0)
     return 'unknown'
 
 

@@ -13,7 +13,8 @@ from gdbmem import Gdb
 
 DOLPHIN = '/Applications/Dolphin.app/Contents/MacOS/Dolphin'
 PORT = 2477
-STATE = 0x80001820
+import regions as _R
+STATE = _R.STATE
 FEED = STATE + 0x10                 # struct st.feed[4][2] in the DEBUG_FEED build
 KPAD0, KPAD_STRIDE = 0x802BC488, 0x688
 

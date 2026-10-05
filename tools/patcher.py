@@ -1,6 +1,6 @@
 """Apply the selected patches to one Wii Party main.dol.
 
-The hook bodies and the shared state block go in one new text section at
+The hook bodies go in one new text section at
 0x80001820 (the Wii's boot-time scratch area, which this game never touches;
 a USB loader's code handler lives at 0x80001800, so turn its cheats off).  Each
 hook site becomes a branch to its body, and the last word of every body
@@ -67,6 +67,21 @@ def status(dol, region, feed=False):
     return out
 
 
+def layout(data, sites):
+    """The new text section (the hook bodies) and [(site va, body va)]."""
+    blob = bytearray()
+    placed = []
+    for s in sites:
+        at = LOW + len(blob)
+        w = list(s['words'])
+        w[-1] = branch(at + 4 * (len(w) - 1), s['va'] + 4)
+        blob += struct.pack('>%dI' % len(w), *w)
+        placed.append((s['va'], at))
+    if LOW + len(blob) > LIMIT:
+        raise ValueError('patch does not fit below 0x%08X' % LIMIT)
+    return blob, placed
+
+
 def patch(dol, region, which, feed=False):
     """Patch `dol` (a dol.Dol) in place; returns the titles applied."""
     data = load(region, feed)
@@ -86,16 +101,10 @@ def patch(dol, region, which, feed=False):
     if existing:
         raise ValueError('this main.dol already carries a patch section; patch a clean one with every feature '
                          'selected at once')
-    blob = bytearray(data['state_size'])
-    placed = []
-    for s in sites:
-        at = LOW + len(blob)
-        w = list(s['words'])
-        w[-1] = branch(at + 4 * (len(w) - 1), s['va'] + 4)
-        blob += struct.pack('>%dI' % len(w), *w)
-        placed.append((s['va'], at))
-    if LOW + len(blob) > LIMIT:
-        raise ValueError('patch does not fit below 0x%08X' % LIMIT)
+    blob, placed = layout(data, sites)
+    state = dol.read(data['state'], data['state_size'])
+    if state is None or any(state):
+        raise ValueError('the state area at 0x%08X is not empty: not a retail main.dol' % data['state'])
     dol.add_text_section(LOW, bytes(blob))
     for va, at in placed:
         dol.write(va, struct.pack('>I', branch(va, at)))

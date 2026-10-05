@@ -45,6 +45,43 @@
     lwz     12, 0x34(1)
     .endm
 
+    .macro SAVEF                /* SAVE, plus the volatile FPRs */
+    SAVE
+    stwu    1, -0x80(1)
+    stfd    0, 0x08(1)
+    stfd    1, 0x10(1)
+    stfd    2, 0x18(1)
+    stfd    3, 0x20(1)
+    stfd    4, 0x28(1)
+    stfd    5, 0x30(1)
+    stfd    6, 0x38(1)
+    stfd    7, 0x40(1)
+    stfd    8, 0x48(1)
+    stfd    9, 0x50(1)
+    stfd    10, 0x58(1)
+    stfd    11, 0x60(1)
+    stfd    12, 0x68(1)
+    stfd    13, 0x70(1)
+    .endm
+
+    .macro RESTOREF
+    lfd     0, 0x08(1)
+    lfd     1, 0x10(1)
+    lfd     2, 0x18(1)
+    lfd     3, 0x20(1)
+    lfd     4, 0x28(1)
+    lfd     5, 0x30(1)
+    lfd     6, 0x38(1)
+    lfd     7, 0x40(1)
+    lfd     8, 0x48(1)
+    lfd     9, 0x50(1)
+    lfd     10, 0x58(1)
+    lfd     11, 0x60(1)
+    lfd     12, 0x68(1)
+    lfd     13, 0x70(1)
+    addi    1, 1, 0x80
+    .endm
+
     .section .gcstart, "ax"
     b       _entry
 
@@ -82,5 +119,25 @@ _entry:
     li      3, 0
     blr
 1:  stwu    1, -16(1)           # original instruction
+#elif defined(HOOK_PTR1) || defined(HOOK_PTR2)
+    # KPADiRead, where a processed sample is copied into the caller's status entry: r21 = KPAD base, r25 = channel
+    SAVEF
+    mr      3, 21
+    mr      4, 25
+#if defined(HOOK_PTR1)
+    mr      5, 18
+#else
+    mr      5, 19
+#endif
+    bl      cc_ptr
+    RESTOREF
+    RESTORE_ALL
+    lwz     0, 0x0c(1)
+    addi    1, 1, 0x70
+#if defined(HOOK_PTR1)
+    addi    5, 18, -4           # original instruction
+#else
+    addi    5, 19, -4           # original instruction
+#endif
 #endif
     nop

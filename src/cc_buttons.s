@@ -9,6 +9,12 @@ CLASSIC:
   cmpwi r4, 0x2
   bne-  RETURN
 
+  # ZL + ZR together are a shake (cc_ptr): keep them from also pressing A and B
+  andi. r0, r8, 0x84
+  cmpwi r0, 0x84
+  bne-  NOT_SHAKE
+  andi. r8, r8, 0xFF7B
+  NOT_SHAKE:
   # r12 = the shared state block (STATE+0 SCHEME, STATE+4 COMBO_HELD)
   lis   r12, STATE>>16
   ori   r12, r12, STATE&0xFFFF
