@@ -45,7 +45,14 @@ class Gdb:
 
     def cmd(self, body):
         self.send(body)
-        return self.recv()
+        r = self.recv()
+        # a late stop reply (S05 / T05...) from an earlier interrupt is not the answer to this request
+        for _ in range(5):
+            if body[0] in 'mM?' and body != '?' and r[:1] in ('S', 'T') and len(r) >= 3 and r[1:3] in ('02', '05', '0b', '0a'):
+                r = self.recv()
+            else:
+                break
+        return r
 
     def drain(self, secs=0.4):
         """Swallow any unsolicited packets (e.g. a second stop reply after

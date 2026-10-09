@@ -49,8 +49,12 @@ class Lab:
 
     # ---- lifecycle -----------------------------------------------------------------------------
     def prepare(self):
-        shutil.rmtree(self.user, ignore_errors=True)
-        os.makedirs(os.path.join(self.user, 'Config'))
+        # everything but the emulated NAND: the game's save (tutorial seen) carries over between runs
+        for e in os.listdir(self.user) if os.path.isdir(self.user) else []:
+            if e != 'Wii':
+                p = os.path.join(self.user, e)
+                shutil.rmtree(p, ignore_errors=True) if os.path.isdir(p) else os.remove(p)
+        os.makedirs(os.path.join(self.user, 'Config'), exist_ok=True)
         ini = ("[General]\nGDBPort = %d\n[Interface]\nConfirmStop = False\nUsePanicHandlers = False\n"
                "[Core]\nMMU = True\nCPUThread = False\nCPUCore = 4\nEnableDebugging = True\nSIDevice0 = 0\n"
                "WiimoteContinuousScanning = False\nWiimoteControllerInterface = False\nOverrideRegionSettings = False\n"
@@ -115,6 +119,14 @@ class Lab:
         finally:
             self._go()
 
+    def read_many(self, *spans):
+        """several (addr, n) reads under one halt"""
+        self._halt()
+        try:
+            return [self.g.read_mem(a, n) for a, n in spans]
+        finally:
+            self._go()
+
     def write(self, addr, data):
         self._halt()
         try:
@@ -132,12 +144,12 @@ class Lab:
 
     def kpad(self, chan):
         k = KPAD0 + chan * KPAD_STRIDE
-        b = self.read(k, 0x80)
+        b, st = self.read_many((k, 0x80), (STATE, 4))
         hold, trig, rel = struct.unpack('>III', b[0:12])
         acc = struct.unpack('>fff', b[0xC:0x18])
         stk = struct.unpack('>ff', b[0x6C:0x74])
         return dict(hold=hold, trig=trig, rel=rel, acc=acc, stick=stk, dev=b[0x5C], err=b[0x5D], fmt=b[0x5F],
-                    scheme=struct.unpack('>I', self.read(STATE, 4))[0])
+                    scheme=struct.unpack('>I', st)[0])
 
     # ---- frames --------------------------------------------------------------------------------
     def frames_dir(self):
@@ -145,7 +157,16 @@ class Lab:
 
     def latest_frame(self):
         fr = sorted(glob.glob(os.path.join(self.frames_dir(), '**', '*.png'), recursive=True), key=os.path.getmtime)
-        return fr[-1] if fr else None
+        # the newest file may still be being written: take the newest one that decodes
+        for f in reversed(fr[-6:]):
+            try:
+                from PIL import Image
+                with Image.open(f) as im:
+                    im.load()
+                return f
+            except Exception:
+                continue
+        return None
 
     def shot(self, dest, settle=0.5):
         time.sleep(settle)

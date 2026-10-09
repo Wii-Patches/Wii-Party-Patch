@@ -69,6 +69,35 @@ def run(a):
         finally:
             lab._go()
         return 'reloaded %d bytes' % (len(blob) - sz)
+    if c == 'gdb':
+        # raw GDB command under a halt:  gdb <packet>
+        lab._halt()
+        try:
+            return lab.g.cmd(a[1])
+        finally:
+            lab._go()
+    if c == 'bp':
+        # run to a breakpoint, return r0-r31 as ints, remove it:  bp <hexaddr> [skip]
+        addr = int(a[1], 16)
+        lab._halt()
+        g = lab.g
+        try:
+            g.cmd('Z0,%x,4' % addr)
+            g.send('c')
+            g.s.settimeout(30)
+            stop = g.recv()
+            regs = g.cmd('g')
+            vals = [int(regs[i * 8:i * 8 + 8], 16) for i in range(32)]
+            g.cmd('z0,%x,4' % addr)
+            return {'stop': stop, 'r': ['%08x' % v for v in vals]}
+        finally:
+            lab.running = False
+            lab._go()
+    if c == 'exec':
+        # dev escape hatch: run a python file in the daemon (has `lab`, `run`); its `result` is returned
+        env = {'lab': lab, 'run': run, 'result': None}
+        exec(open(a[1]).read(), env)
+        return env['result']
     if c == 'quit':
         lab.stop(); __import__('os')._exit(0)
     return 'unknown'

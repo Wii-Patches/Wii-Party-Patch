@@ -216,19 +216,25 @@ static __attribute__((noinline)) u32 cc_buttons(u32 h)
     if (h & G_DOWN) b |= CL_DOWN;
     if (h & G_RIGHT) b |= CL_RIGHT;
     if (h & G_LEFT) b |= CL_LEFT;
-    if (h & G_Z) b |= CL_ZL | CL_ZR;         /* ZL + ZR together: shake */
     if (h & G_START) b |= CL_PLUS;
     /* Start + Z is Classic + and - together: swaps the horizontal and vertical layouts */
     if ((h & (G_START | G_Z)) == (G_START | G_Z))
-        b = (b & ~(CL_ZL | CL_ZR | CL_PLUS)) | CL_PLUS | CL_MINUS;
+        b = (b & ~CL_PLUS) | CL_PLUS | CL_MINUS;
     /* HOME: L + R + Start */
     if ((h & (G_L | G_R | G_START)) == (G_L | G_R | G_START))
         b = (b & ~(CL_L | CL_R | CL_PLUS)) | CL_HOME;
     return b;
 }
 
-static __attribute__((noinline)) void fill_cc(u8 *s, u32 h, u32 l, u32 b)
+/* Z shakes: the raw accelerometer swings between two big values on consecutive samples, which is all a shake
+ * is to the game (it looks at how fast the acceleration changes) */
+static __attribute__((noinline)) void fill_cc(u8 *s, u32 h, u32 l, u32 b, s32 acc)
 {
+    if ((h & (G_Z | G_START)) == G_Z) {
+        *(s16 *)(s + 2) = (s16)acc;
+        *(s16 *)(s + 4) = (s16)acc;
+        *(s16 *)(s + 6) = (s16)acc;
+    }
     *(u16 *)(s + 0x2A) = (u16)b;
     *(s16 *)(s + 0x2C) = stick(h >> 8);      /* control stick x */
     *(s16 *)(s + 0x2E) = stick(h);           /* control stick y */
@@ -249,14 +255,14 @@ static inline u8 *slot(u8 *k, u32 i)
     return *(u8 **)(k + 0x5A0) + (i - 16) * 0x42;
 }
 
-static __attribute__((noinline)) void put_sample(u8 *k, u32 i, u32 h, u32 l, u32 b)
+static __attribute__((noinline)) void put_sample(u8 *k, u32 i, u32 h, u32 l, u32 b, s32 acc)
 {
     u16 *p = (u16 *)slot(k, i);
     u32 j;
 
     for (j = 0; j < 0x42 / 2; j++)
         p[j] = 0;
-    fill_cc((u8 *)p, h, l, b);
+    fill_cc((u8 *)p, h, l, b, acc);
 }
 
 /* The game's controller class reads the left stick from the *second* status entry KPADRead returns, so one
@@ -284,8 +290,8 @@ void gc_sample(u8 *k, u32 chan)
         u8 dev = k[0x5C];
         if (!(dev == 0 || dev == 0xFD || c->ours))
             return;
-        put_sample(k, idx, h, l, c->prev_btn);
-        put_sample(k, (idx + 1) % n, h, l, b);
+        put_sample(k, idx, h, l, c->prev_btn, SHAKE_ACC);
+        put_sample(k, (idx + 1) % n, h, l, b, -SHAKE_ACC);
         k[0x17A] = (idx + 2) % n;
         k[0x17B] = 2;
         c->prev_btn = b;
@@ -302,7 +308,7 @@ void gc_sample(u8 *k, u32 chan)
     for (i = 0; i < cnt; i++) {
         u8 *s = slot(k, (idx + n - cnt + i) % n);
         if (s[0x28] == 0 || s[0x28] == 0xFD)
-            fill_cc(s, h, l, b);
+            fill_cc(s, h, l, b, 0);
     }
     if (cnt == 1) {
         /* a lone real sample: queue a copy after it so there is a second entry */
@@ -344,7 +350,7 @@ u32 gc_probe(u32 chan, u32 *type)
 #if defined(HOOK_PTR1) || defined(HOOK_PTR2)
 /* The Classic Controller has no pointer and no motion, but Wii Party's games use both.  Called after KPAD has
  * processed each sample (before it is copied into the caller's status entry): the right stick moves a virtual
- * IR pointer, and ZL + ZR together (GameCube: Z) fake a shake.  Real Wii Remote data is never touched: only
+ * IR pointer.  Real Wii Remote data is never touched: only
  * Classic Controller samples (device type 2) come here.  Hard float; no constants in memory.
  * k = the channel's KPAD struct, entry = the sample being processed. */
 static inline float F(u32 u)
@@ -406,14 +412,6 @@ void cc_ptr(u8 *k, u32 chan, u8 *entry)
         *(float *)(k + 0x20) = p->x;
         *(float *)(k + 0x24) = p->y;
         k[0x5E] = 1;
-    }
-
-    if ((btn & 0x84) == 0x84) {                   /* ZL + ZR: shake */
-        float a = p->phase ? F(0x40800000u) : F(0xC0800000u);
-        p->phase ^= 1;
-        *(float *)(k + 0x0C) = a;
-        *(float *)(k + 0x10) = a;
-        *(float *)(k + 0x14) = a;
     }
 }
 #endif

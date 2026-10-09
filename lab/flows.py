@@ -17,6 +17,30 @@ def tap(*names, hold=0.3, gap=1.0, chan=0):
     return cmd('tap', chan, *names, 'hold=%s' % hold, 'gap=%s' % gap)
 
 
+def sig(path):
+    from PIL import Image
+    return list(Image.open(path).convert('L').resize((32, 18)).getdata())
+
+
+def is_screen(name, tol=14.0):
+    """does the game currently show the screen saved as refs/<name>.png?"""
+    import os
+    shot = cmd('shot', '/tmp/wp_cur.png')
+    if shot == 'noframe':
+        return False
+    a, b = sig('/tmp/wp_cur.png'), sig(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'refs', name + '.png'))
+    return sum(abs(x - y) for x, y in zip(a, b)) / len(a) < tol
+
+
+def until(name, *names, tries=40, gap=2.0, hold=0.3):
+    """press `names` until the screen `name` shows up"""
+    for _ in range(tries):
+        if is_screen(name):
+            return True
+        tap(*names, hold=hold, gap=gap)
+    raise RuntimeError('never reached ' + name)
+
+
 def to_title():
     cmd('pad', 0)
     time.sleep(40)
@@ -32,33 +56,28 @@ def skip_intro():
 
 
 def to_main_menu():
-    to_title()
+    cmd('pad', 0)
+    time.sleep(35)
+    until('title', 'A', gap=3)
     tap('A', 'B', hold=0.8, gap=10)
-    for _ in range(16):
-        tap('A', gap=2.5)
-    for _ in range(7):
-        tap('B', gap=3)
+    until('mainmenu', 'A', gap=2.5, tries=60)
 
 
-def to_derby(players=1):
-    """main menu -> Minigames -> Free Play -> n players -> the first minigame's rules page"""
-    tap('D', gap=1.5); tap('D', gap=1.5); tap('RT', gap=1.5); tap('RT', gap=1.5)
-    tap('A', gap=5)
-    for _ in range(4):
-        tap('A', gap=4)
+def to_derby():
+    """main menu -> Minigames -> Free Play -> 1 player -> Derby Dash's rules page (every step waits for its screen)"""
+    for n in ('D', 'D', 'RT', 'RT'):
+        tap(n, hold=0.5, gap=2)
+    until('players', 'A', gap=7, hold=0.5, tries=20)
     for c in (1, 2, 3):
         cmd('pad', c)
-    time.sleep(5)
-    for _ in range(players - 1):
-        tap('RT', gap=1.5)
-    tap('A', gap=6)
-    for _ in range(3):
-        tap('A', gap=4)
-    for _ in range(2):
-        tap('A', gap=6)
-    for _ in range(3):
-        tap('A', gap=5)
-    time.sleep(25)
+    time.sleep(6)
+    until('derby_rules', 'A', gap=8, hold=0.5, tries=40)
+
+
+def to_derby_race():
+    to_main_menu()
+    to_derby()
+    tap('A', hold=0.5, gap=35)
 
 
 if __name__ == '__main__':
@@ -69,5 +88,7 @@ if __name__ == '__main__':
         to_main_menu()
     elif f == 'derby':
         to_main_menu(); to_derby()
+    elif f == 'race':
+        to_derby_race()
     elif f == 'shot':
         print(cmd('shot', sys.argv[2]))

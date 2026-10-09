@@ -27,7 +27,7 @@ CC = DEVKIT + '/bin/powerpc-eabi-'
 FEATURES = {'cc': ['cc_buttons', 'cc_stick', 'cc_tilt', 'cc_ptr1', 'cc_ptr2'], 'gc': ['gc_poll', 'gc_sample', 'gc_probe']}
 
 # Wii Party's Classic Controller stick values: see docs/TECHNICAL.md
-STICK_SCALE, STICK_MAX, CSTICK_MAX = 3, 308, 361
+STICK_SCALE, STICK_MAX, CSTICK_MAX, SHAKE_ACC = 3, 308, 361, 400
 PTR_SPEED_X, PTR_SPEED_Y = 0x3FCCCCCD, 0x3F99999A      # floats: 1.6 and 1.2 screens per second at full stick
 C_HOOKS = ('gc_poll', 'gc_sample', 'gc_probe', 'cc_ptr1', 'cc_ptr2')
 
@@ -38,7 +38,7 @@ def compile_gc(hook, defs, debug=False):
     D = ['-D%s=0x%08Xu' % kv for kv in defs.items()]
     D += ['-DSTATE=0x%08Xu' % R.STATE, '-DHOOK_' + hook.split('_')[1].upper(),
           '-DSTICK_SCALE=%d' % STICK_SCALE, '-DSTICK_MAX=%d' % STICK_MAX,
-          '-DCSTICK_MAX=%d' % CSTICK_MAX, '-DPTR_SPEED_X=0x%08Xu' % PTR_SPEED_X, '-DPTR_SPEED_Y=0x%08Xu' % PTR_SPEED_Y]
+          '-DCSTICK_MAX=%d' % CSTICK_MAX, '-DSHAKE_ACC=%d' % SHAKE_ACC, '-DPTR_SPEED_X=0x%08Xu' % PTR_SPEED_X, '-DPTR_SPEED_Y=0x%08Xu' % PTR_SPEED_Y]
     if debug:
         D.append('-DDEBUG_FEED')
     fp = '-mhard-float' if hook.startswith('cc_ptr') else '-msoft-float'
