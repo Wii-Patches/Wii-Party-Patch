@@ -168,6 +168,7 @@ void gc_poll(u32 chan)
 #define CL_DOWN  0x4000
 #define CL_RIGHT 0x8000
 
+#define SHAKE_ACC 400   /* raw accelerometer swing for Z */
 #define G_A     0x01000000u
 #define G_B     0x02000000u
 #define G_X     0x04000000u
@@ -290,8 +291,9 @@ void gc_sample(u8 *k, u32 chan)
         u8 dev = k[0x5C];
         if (!(dev == 0 || dev == 0xFD || c->ours))
             return;
-        put_sample(k, idx, h, l, c->prev_btn, SHAKE_ACC);
-        put_sample(k, (idx + 1) % n, h, l, b, -SHAKE_ACC);
+        s32 a = (tb() & 0x400000u) ? SHAKE_ACC : -SHAKE_ACC;   /* ~4 Hz swing */
+        put_sample(k, idx, h, l, c->prev_btn, a);
+        put_sample(k, (idx + 1) % n, h, l, b, a);
         k[0x17A] = (idx + 2) % n;
         k[0x17B] = 2;
         c->prev_btn = b;
@@ -308,7 +310,7 @@ void gc_sample(u8 *k, u32 chan)
     for (i = 0; i < cnt; i++) {
         u8 *s = slot(k, (idx + n - cnt + i) % n);
         if (s[0x28] == 0 || s[0x28] == 0xFD)
-            fill_cc(s, h, l, b, 0);
+            fill_cc(s, h, l, b, (tb() & 0x400000u) ? SHAKE_ACC : -SHAKE_ACC);
     }
     if (cnt == 1) {
         /* a lone real sample: queue a copy after it so there is a second entry */
@@ -408,6 +410,22 @@ void cc_ptr(u8 *k, u32 chan, u8 *entry)
     }
     if (p->on && now - p->act_tb > 607500000u)    /* 15 s idle: hand the pointer back to the menus */
         p->on = 0;
+#ifdef DEBUG_FEED
+    /* test builds: a debugger can make the hook poke floats into the KPAD struct to see what the game reacts to.
+     * STATE+0x1BC != 0 enables it; STATE+0x1C0 + 8*i = {offset, value}; the sign flips every frame. */
+    if (R32(STATE + 0x1BC) && chan == 0) {
+        u32 i;
+        if (now - p->res[0] > 4860000u) {
+            p->res[0] = now;
+            p->phase ^= 1;
+        }
+        for (i = 0; i < 8; i++) {
+            u32 off = R32(STATE + 0x1C0 + i * 8), v = R32(STATE + 0x1C4 + i * 8);
+            if (off)
+                *(u32 *)(k + off) = p->phase ? v : (v ^ 0x80000000u);
+        }
+    }
+#endif
     if (p->on) {
         *(float *)(k + 0x20) = p->x;
         *(float *)(k + 0x24) = p->y;

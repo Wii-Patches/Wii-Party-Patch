@@ -91,6 +91,13 @@ _entry:
 #if defined(HOOK_POLL)
     # KPADiRead(chan, buf, n, ...): r3 = channel
     SAVE
+#ifdef DEBUG_FEED
+    lis     11, STATE@h             # test builds: remember the caller's status buffer (r4) per channel
+    ori     11, 11, STATE@l
+    slwi    12, 3, 2
+    add     11, 11, 12
+    stw     4, 0x1F0(11)
+#endif
     bl      gc_poll
     RESTORE_ALL
     lwz     0, 0x0c(1)

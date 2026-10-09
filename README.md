@@ -50,7 +50,7 @@ game as a Classic Controller, so it gets exactly the layer above.
 | L, R | L, R |
 | D-pad | D-pad |
 | Start | + |
-| Z | Shake (the Wii Remote's own motion, faked: for the shake minigames) |
+| Z | Shake (a ~4 Hz fake swing of the Wii Remote's acceleration; **experimental**, not yet confirmed to register in the shake minigames) |
 | Start + Z | + and − together: switch vertical / sideways |
 | L + R + Start | HOME |
 

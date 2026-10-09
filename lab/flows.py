@@ -71,13 +71,14 @@ def to_derby():
     for c in (1, 2, 3):
         cmd('pad', c)
     time.sleep(6)
-    until('derby_rules', 'A', gap=8, hold=0.5, tries=40)
+    until('gamelist', 'A', gap=8, hold=0.5, tries=40)
 
 
 def to_derby_race():
     to_main_menu()
     to_derby()
-    tap('A', hold=0.5, gap=35)
+    tap('A', hold=0.5, gap=15)      # Derby Dash is the first game of the list
+    tap('A', hold=0.5, gap=15)      # rules -> start
 
 
 if __name__ == '__main__':
