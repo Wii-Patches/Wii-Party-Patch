@@ -23,7 +23,7 @@ Wii** — see [On a real Wii](#on-a-real-wii).
 
 ### Classic Controller
 
-The Classic Controller layout is Vague Rant's hack, extended with a D-pad /
+The Classic Controller layout is awesome's hack (built off Vague Rant's documentation), extended with a D-pad /
 tilt / pointer layer. `+` and `-` together switch between the two layouts
 (Wii Remote held **vertically**, which is the default, or **sideways**), the
 same way Wii Party's own minigames ask for them.
