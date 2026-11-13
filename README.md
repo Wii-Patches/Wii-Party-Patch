@@ -23,7 +23,7 @@ Wii** — see [On a real Wii](#on-a-real-wii).
 
 ### Classic Controller
 
-The Classic Controller layout is Vague Rant's hack, extended with a D-pad /
+The Classic Controller layout is awesome's hack (built off Vague Rant's documentation), extended with a D-pad /
 tilt / pointer layer. `+` and `-` together switch between the two layouts
 (Wii Remote held **vertically**, which is the default, or **sideways**), the
 same way Wii Party's own minigames ask for them.
@@ -115,6 +115,8 @@ How the patches work, and how they are tested in Dolphin, is in
 - **Vague Rant** — the Classic Controller hack for Wii Party this layer is built on
   ([GBAtemp thread](https://gbatemp.net/threads/new-classic-controller-hacks.659837/)),
   and the follow-up button, D-pad and tilt hooks in `src/cc_*.s`.
+- awesome - Original creator of Wii Party Classic Controller Hack, that has + and - to swap between control schemes, tilting, left stick, and IR Pointer. 
+Original code can be found [here.](https://gbatemp.net/threads/new-classic-controller-hacks.659837/post-10911539) Built off Vague Rant's documentation in the thread above.
 - The SI-polling approach of
   [Barrel Blast Patch](https://github.com/quatric/Barrel-Blast-Patch), reused through
   [ACCF-Patch](https://github.com/quatric/ACCF-Patch).
